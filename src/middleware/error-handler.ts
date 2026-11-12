@@ -1,6 +1,7 @@
 import type { ErrorRequestHandler } from 'express';
 import { ZodError } from 'zod';
 import { AppError } from '../errors/app-error';
+import { sendError } from '../http/error-response';
 import {
   PaymentNotFoundError,
   PersistenceError,
@@ -14,6 +15,15 @@ function zodDetails(err: ZodError) {
   }));
 }
 
+function isPayloadTooLarge(err: unknown): boolean {
+  if (!err || typeof err !== 'object') {
+    return false;
+  }
+
+  const candidate = err as { status?: number; type?: string };
+  return candidate.status === 413 || candidate.type === 'entity.too.large';
+}
+
 export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   if (res.headersSent) {
     next(err);
@@ -21,74 +31,54 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   }
 
   if (err instanceof ZodError) {
-    res.status(400).json({
-      error: {
-        code: 'VALIDATION_ERROR',
-        message: 'Invalid request',
-        details: zodDetails(err),
-      },
-    });
+    sendError(req, res, 400, 'VALIDATION_ERROR', 'Invalid request', zodDetails(err));
     return;
   }
 
   if (err instanceof AppError) {
-    res.status(err.statusCode).json({
-      error: {
-        code: err.code,
-        message: err.message,
-        ...(err.details !== undefined ? { details: err.details } : {}),
-      },
-    });
+    sendError(req, res, err.statusCode, err.code, err.message, err.details);
     return;
   }
 
   if (err instanceof PaymentNotFoundError) {
-    res.status(404).json({
-      error: {
-        code: 'NOT_FOUND',
-        message: err.message,
-      },
-    });
+    sendError(req, res, 404, 'NOT_FOUND', err.message);
     return;
   }
 
   if (err instanceof StalePaymentError) {
-    res.status(409).json({
-      error: {
-        code: 'CONFLICT',
-        message: err.message,
-      },
-    });
+    sendError(req, res, 409, 'CONFLICT', err.message);
     return;
   }
 
   if (err instanceof PersistenceError) {
-    req.log?.error({ err }, 'Payment persistence failure');
-    res.status(503).json({
-      error: {
-        code: 'SERVICE_UNAVAILABLE',
-        message: 'Payment store is temporarily unavailable',
-      },
-    });
+    req.log?.error({ err, requestId: req.requestId }, 'Payment persistence failure');
+    sendError(
+      req,
+      res,
+      503,
+      'SERVICE_UNAVAILABLE',
+      'Payment store is temporarily unavailable',
+    );
+    return;
+  }
+
+  if (isPayloadTooLarge(err)) {
+    sendError(
+      req,
+      res,
+      413,
+      'PAYLOAD_TOO_LARGE',
+      'Request body exceeds the 16kb limit',
+    );
     return;
   }
 
   const isSyntaxError = err instanceof SyntaxError && 'body' in err;
   if (isSyntaxError) {
-    res.status(400).json({
-      error: {
-        code: 'INVALID_JSON',
-        message: 'Request body must be valid JSON',
-      },
-    });
+    sendError(req, res, 400, 'INVALID_JSON', 'Request body must be valid JSON');
     return;
   }
 
-  req.log?.error({ err }, 'Unhandled application error');
-  res.status(500).json({
-    error: {
-      code: 'INTERNAL_ERROR',
-      message: 'An unexpected error occurred',
-    },
-  });
+  req.log?.error({ err, requestId: req.requestId }, 'Unhandled application error');
+  sendError(req, res, 500, 'INTERNAL_ERROR', 'An unexpected error occurred');
 };
