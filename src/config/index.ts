@@ -1,3 +1,4 @@
+import path from 'node:path';
 import dotenv from 'dotenv';
 
 dotenv.config({ quiet: true });
@@ -7,6 +8,7 @@ export type AppConfig = {
   host: string;
   port: number;
   logLevel: string;
+  dataFile: string;
 };
 
 function parsePort(value: string | undefined, fallback: number): number {
@@ -19,4 +21,6 @@ export const config: AppConfig = {
   host: process.env.HOST ?? '127.0.0.1',
   port: parsePort(process.env.PORT, 4000),
   logLevel: process.env.LOG_LEVEL ?? 'info',
+  dataFile:
+    process.env.DATA_FILE ?? path.join(process.cwd(), 'data', 'payments.json'),
 };
