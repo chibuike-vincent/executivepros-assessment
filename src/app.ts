@@ -1,14 +1,22 @@
-import express, {
-  type ErrorRequestHandler,
-  type Express,
-  type Request,
-  type Response,
-} from 'express';
+import express, { type Express, type Request, type Response } from 'express';
 import pinoHttp from 'pino-http';
+import { config } from './config';
 import logger from './config/logger';
+import { errorHandler } from './middleware/error-handler';
+import { FilePaymentRepository } from './repositories/payment-repository';
 import healthRouter from './routes/health';
+import { createPaymentRouter } from './routes/payments';
+import { PaymentService } from './services/payment-service';
 
-export function createApp(): Express {
+export type AppDependencies = {
+  paymentService?: PaymentService;
+};
+
+export function createApp(deps: AppDependencies = {}): Express {
+  const paymentService =
+    deps.paymentService ??
+    new PaymentService(new FilePaymentRepository(config.dataFile));
+
   const app = express();
 
   app.disable('x-powered-by');
@@ -23,6 +31,7 @@ export function createApp(): Express {
   );
 
   app.use('/health', healthRouter);
+  app.use('/payments', createPaymentRouter(paymentService));
 
   app.use((req: Request, res: Response) => {
     res.status(404).json({
@@ -32,33 +41,6 @@ export function createApp(): Express {
       },
     });
   });
-
-  const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
-    req.log?.error({ err }, 'Unhandled application error');
-
-    if (res.headersSent) {
-      next(err);
-      return;
-    }
-
-    const isSyntaxError = err instanceof SyntaxError && 'body' in err;
-    if (isSyntaxError) {
-      res.status(400).json({
-        error: {
-          code: 'INVALID_JSON',
-          message: 'Request body must be valid JSON',
-        },
-      });
-      return;
-    }
-
-    res.status(500).json({
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'An unexpected error occurred',
-      },
-    });
-  };
 
   app.use(errorHandler);
 
