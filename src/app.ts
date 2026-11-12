@@ -7,6 +7,7 @@ import { errorHandler } from './middleware/error-handler';
 import { notFoundHandler } from './middleware/not-found';
 import { requestId } from './middleware/request-id';
 import { FilePaymentRepository } from './repositories/payment-repository';
+import { createDocsRouter } from './routes/docs';
 import healthRouter from './routes/health';
 import { createPaymentRouter } from './routes/payments';
 import { PaymentJobQueue } from './jobs/payment-job-queue';
@@ -71,12 +72,13 @@ export function createRuntime(deps: AppDependencies = {}): AppRuntime {
       genReqId: (req) => req.requestId,
       customProps: (req) => ({ requestId: req.requestId }),
       autoLogging: {
-        ignore: (req) => req.url === '/health',
+        ignore: (req) => req.url === '/health' || req.url.startsWith('/docs'),
       },
     }),
   );
 
   app.use('/health', healthRouter);
+  app.use('/docs', createDocsRouter());
   app.use('/payments', createPaymentRouter(paymentService));
 
   app.use(notFoundHandler);
