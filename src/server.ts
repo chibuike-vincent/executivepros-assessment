@@ -1,13 +1,17 @@
-import { createApp } from './app';
+import { createRuntime } from './app';
 import { config } from './config';
 import logger from './config/logger';
 
-const app = createApp();
+const { app, jobQueue } = createRuntime();
 const server = app.listen(config.port, config.host, () => {
   logger.info(
     { host: config.host, port: config.port, env: config.env },
     'Payment service listening',
   );
+
+  void jobQueue.recover().catch((err: unknown) => {
+    logger.error({ err }, 'Startup payment recovery failed');
+  });
 });
 
 server.on('error', (err) => {
@@ -24,8 +28,16 @@ function shutdown(signal: string): void {
       process.exit(1);
     }
 
-    logger.info('HTTP server closed');
-    process.exit(0);
+    void jobQueue
+      .stop()
+      .then(() => {
+        logger.info('HTTP server closed');
+        process.exit(0);
+      })
+      .catch((stopErr: unknown) => {
+        logger.error({ err: stopErr }, 'Error while draining payment jobs');
+        process.exit(1);
+      });
   });
 
   setTimeout(() => {

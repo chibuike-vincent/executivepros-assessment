@@ -13,6 +13,7 @@ import {
   type Payment,
   type PaymentStatus,
 } from '../schemas/payment';
+import type { JobEnqueue } from '../jobs/payment-job-queue';
 import { assertTransition, isClientStatus } from './status-machine';
 
 export type CreatePaymentResult = {
@@ -21,7 +22,13 @@ export type CreatePaymentResult = {
 };
 
 export class PaymentService {
+  private jobs: JobEnqueue | undefined;
+
   constructor(private readonly payments: FilePaymentRepository) {}
+
+  attachJobQueue(jobs: JobEnqueue): void {
+    this.jobs = jobs;
+  }
 
   async create(input: NewPayment): Promise<CreatePaymentResult> {
     const existing = await this.payments.getByMerchantRef(input.merchantRef);
@@ -36,6 +43,7 @@ export class PaymentService {
         { paymentId: payment.id, merchantRef: payment.merchantRef },
         'Payment created',
       );
+      this.jobs?.enqueue(payment.id);
       return { payment, created: true };
     } catch (err) {
       if (err instanceof DuplicateMerchantRefError) {
