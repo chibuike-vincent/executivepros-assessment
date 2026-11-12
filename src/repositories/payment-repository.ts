@@ -127,7 +127,7 @@ export class FilePaymentRepository {
         payments: [...result.data.payments],
       };
     } catch (err) {
-      if (isNodeError(err) && err.code === 'ENOENT') {
+      if (getErrorCode(err) === 'ENOENT') {
         return emptyStore();
       }
 
@@ -168,6 +168,11 @@ export class FilePaymentRepository {
   }
 }
 
-function isNodeError(err: unknown): err is NodeJS.ErrnoException {
-  return err instanceof Error && 'code' in err;
+function getErrorCode(err: unknown): string | undefined {
+  if (typeof err !== 'object' || err === null || !('code' in err)) {
+    return undefined;
+  }
+
+  const code = (err as { code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
 }
